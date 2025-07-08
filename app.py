@@ -12,6 +12,13 @@ load_dotenv()
 
 app = Flask(__name__)
 
+# --- App Configuration ---
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False  # Reduce response size
+app.config['JSON_SORT_KEYS'] = False  # Maintain key order for better performance
+
+# Set shorter timeouts for AI requests to prevent client timeouts
+AI_REQUEST_TIMEOUT = 30  # seconds
+
 # --- Setup Logging ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -80,8 +87,8 @@ def generate_gemini_response(prompt_text, is_json_output=False):
     logger.debug(f"Prompt for Gemini:\n---\n{prompt_text}\n---")
 
     # List of models to try - updated with current available models
-    # Using the correct model names for the current API version
-    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'] 
+    # Using the most current model names for the API
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro', 'models/gemini-1.5-flash'] 
     
     last_exception = None
     last_model_tried = ""
@@ -151,7 +158,12 @@ def generate_gemini_response(prompt_text, is_json_output=False):
     details_message = str(last_exception)
     if "API version v1beta" in details_message:
         details_message += " This might indicate an issue with the model name or your library version targeting an old API. Try updating the 'google-generativeai' library."
-    return {"error": "Failed to generate AI response after trying multiple models.", "details": details_message}, 500
+    
+    # Return a more graceful fallback response instead of just error
+    if is_json_output:
+        return ["Unable to generate AI suggestions at this time. Please try again later."], 200
+    else:
+        return {"text": "Unable to generate AI response at this time. Please try again later."}, 200
 
 # --- Motivation Endpoint ---
 @app.route('/motivation', methods=['POST'])
@@ -304,18 +316,58 @@ def get_habit_suggestions():
     
     result, status_code = generate_gemini_response(prompt, is_json_output=True)
     
-    if status_code == 200 and not isinstance(result, list):
-        logger.warning(f"Habit suggestions from AI was not a list as expected. Received: {type(result)}, Data: {result}. Attempting to reformat.")
-        if isinstance(result, dict) and "text" in result: 
-            result = [s.strip() for s in result["text"].split('\n') if s.strip()]
-        elif isinstance(result, str): 
-             result = [s.strip() for s in result.split('\n') if s.strip()]
-        else: 
-            result = ["Consider what small step you can take for your wellbeing today."]
-            logger.warning("Could not reformat AI habit suggestions into a list. Using default.")
-
-
     if status_code == 200:
+        # Handle different response formats and clean up JSON formatting issues
+        if isinstance(result, list):
+            # Clean up any markdown formatting or JSON artifacts
+            cleaned_suggestions = []
+            for item in result:
+                item = str(item).strip()
+                # Remove markdown code blocks and JSON artifacts
+                if item.startswith('```'):
+                    continue
+                if item in ['[', ']', '{', '}']:
+                    continue
+                if item.startswith('"') and item.endswith('",'):
+                    item = item[1:-2]  # Remove quotes and comma
+                elif item.startswith('"') and item.endswith('"'):
+                    item = item[1:-1]  # Remove quotes
+                if item and len(item) > 10:  # Only include substantial suggestions
+                    cleaned_suggestions.append(item)
+            
+            if cleaned_suggestions:
+                result = cleaned_suggestions[:3]  # Limit to 3 suggestions
+            else:
+                result = ["Consider what small step you can take for your wellbeing today."]
+        
+        elif isinstance(result, dict) and "text" in result:
+            # Parse text response into list
+            text_content = result["text"]
+            # Try to extract JSON from text if it contains JSON
+            import re
+            json_match = re.search(r'\[(.*?)\]', text_content, re.DOTALL)
+            if json_match:
+                try:
+                    json_content = '[' + json_match.group(1) + ']'
+                    parsed_list = json.loads(json_content)
+                    result = parsed_list[:3]
+                except:
+                    # Fallback to line splitting
+                    result = [s.strip() for s in text_content.split('\n') if s.strip() and len(s.strip()) > 10][:3]
+            else:
+                result = [s.strip() for s in text_content.split('\n') if s.strip() and len(s.strip()) > 10][:3]
+            
+            if not result:
+                result = ["Consider what small step you can take for your wellbeing today."]
+        
+        elif isinstance(result, str):
+            result = [s.strip() for s in result.split('\n') if s.strip() and len(s.strip()) > 10][:3]
+            if not result:
+                result = ["Consider what small step you can take for your wellbeing today."]
+        
+        else:
+            result = ["Consider what small step you can take for your wellbeing today."]
+
         logger.info(f"Sending response for /habits. Status: {status_code}, Suggestions: {result}")
         return jsonify({"suggestions": result}), status_code
     else:
