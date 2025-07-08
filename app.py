@@ -25,6 +25,25 @@ if GEMINI_API_KEY:
 else:
     logger.error("CRITICAL: GEMINI_API_KEY not found in environment variables for AI service. AI suggestions will fail.")
 
+# --- Root/Health Check Endpoint ---
+@app.route('/', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "service": "MoodSync AI Service",
+        "version": "1.0.0",
+        "endpoints": [
+            "/list-models",
+            "/motivation", 
+            "/habits",
+            "/generate-nudge",
+            "/generate-challenge-message",
+            "/generate-insights"
+        ],
+        "gemini_configured": bool(GEMINI_API_KEY)
+    }), 200
+
 # --- Helper function to list models ---
 @app.route('/list-models', methods=['GET'])
 def list_models_endpoint(): # Renamed function slightly to avoid potential clashes if imported elsewhere
@@ -60,9 +79,9 @@ def generate_gemini_response(prompt_text, is_json_output=False):
     logger.debug(f"Attempting to generate content with Gemini. JSON output expected: {is_json_output}")
     logger.debug(f"Prompt for Gemini:\n---\n{prompt_text}\n---")
 
-    # List of models to try - you will likely update this based on /list-models output
-    # Common model names. The `models/` prefix is often handled by the library.
-    models_to_try = ['gemini-1.0-pro', 'gemini-pro', 'gemini-1.5-flash-latest'] 
+    # List of models to try - updated with current available models
+    # Using the correct model names for the current API version
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'] 
     
     last_exception = None
     last_model_tried = ""
@@ -378,12 +397,14 @@ Example style: "You've maintained a {streak_count}-day reflection streak. Taking
 
 Generate a fresh, personalized message:"""
         
-        # Generate the nudge using Gemini
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
+        # Generate the nudge using Gemini with updated model fallback
+        result, status_code = generate_gemini_response(prompt)
         
-        if response.text:
-            nudge_message = response.text.strip()
+        if status_code == 200:
+            if isinstance(result, dict) and "text" in result:
+                nudge_message = result["text"].strip()
+            else:
+                nudge_message = str(result).strip()
             
             # Ensure message isn't too long
             if len(nudge_message) > max_length:
@@ -392,8 +413,8 @@ Generate a fresh, personalized message:"""
             logger.info(f"Generated nudge message: {nudge_message}")
             return jsonify({"message": nudge_message, "tone": tone}), 200
         else:
-            logger.error("AI response was empty")
-            return jsonify({"error": "Failed to generate nudge message"}), 500
+            logger.error(f"AI response failed with status {status_code}: {result}")
+            return jsonify(result), status_code
     
     except Exception as e:
         logger.error(f"Error generating nudge: {str(e)}", exc_info=True)
@@ -483,12 +504,14 @@ Example style: "While you didn't complete this {challenge_type} challenge, attem
 
 Generate a fresh, supportive message:"""
         
-        # Generate the message using Gemini
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
+        # Generate the message using Gemini with updated model fallback
+        result, status_code = generate_gemini_response(prompt)
         
-        if response.text:
-            message = response.text.strip()
+        if status_code == 200:
+            if isinstance(result, dict) and "text" in result:
+                message = result["text"].strip()
+            else:
+                message = str(result).strip()
             
             # Ensure message isn't too long
             if len(message) > max_length:
@@ -497,8 +520,8 @@ Generate a fresh, supportive message:"""
             logger.info(f"Generated challenge message: {message}")
             return jsonify({"message": message, "tone": tone, "completed": completed}), 200
         else:
-            logger.error("AI response was empty")
-            return jsonify({"error": "Failed to generate challenge message"}), 500
+            logger.error(f"AI response failed with status {status_code}: {result}")
+            return jsonify(result), status_code
     
     except Exception as e:
         logger.error(f"Error generating challenge message: {str(e)}", exc_info=True)
@@ -590,58 +613,64 @@ Generate a response with:
 
 Use professional, encouraging language. Be specific about patterns observed. Format as JSON with keys: "insights", "recommendations", "mood_trends"."""
         
-        # Generate the insights using Gemini
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
+        # Generate the insights using Gemini with updated model fallback
+        result, status_code = generate_gemini_response(prompt, is_json_output=True)
         
-        if response.text:
-            # Try to parse as JSON
-            try:
-                import json
-                result = json.loads(response.text)
-                logger.info(f"Generated insights: {len(result.get('insights', []))} insights, {len(result.get('recommendations', []))} recommendations")
-                return jsonify(result), 200
-            except json.JSONDecodeError:
-                # If not valid JSON, create structured response
-                insights_text = response.text.strip()
+        if status_code == 200:
+            # Handle different response formats
+            if isinstance(result, dict):
+                if "insights" in result and "recommendations" in result:
+                    # Already in correct format
+                    logger.info(f"Generated insights: {len(result.get('insights', []))} insights, {len(result.get('recommendations', []))} recommendations")
+                    return jsonify(result), 200
+                elif "text" in result:
+                    # Extract from text field
+                    insights_text = result["text"]
+                else:
+                    insights_text = str(result)
+            elif isinstance(result, list):
+                # Convert list to structured format
+                insights_text = "\n".join(result)
+            else:
+                insights_text = str(result)
+            
+            # Parse the text into structured format
+            lines = insights_text.split('\n')
+            insights = []
+            recommendations = []
+            mood_trends = "Analysis of your mood patterns over the specified period."
+            
+            current_section = None
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
                 
-                # Basic parsing fallback
-                lines = insights_text.split('\n')
-                insights = []
-                recommendations = []
-                mood_trends = "Analysis of your mood patterns over the specified period."
-                
-                current_section = None
-                for line in lines:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    if 'insight' in line.lower() or 'pattern' in line.lower():
-                        current_section = 'insights'
-                    elif 'recommend' in line.lower() or 'suggest' in line.lower():
-                        current_section = 'recommendations'
-                    elif 'trend' in line.lower() or 'analysis' in line.lower():
-                        current_section = 'trends'
-                    elif line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.')):
-                        if current_section == 'insights':
-                            insights.append(line)
-                        elif current_section == 'recommendations':
-                            recommendations.append(line)
-                        elif current_section == 'trends':
-                            mood_trends = line
-                
-                result = {
-                    'insights': insights[:4],
-                    'recommendations': recommendations[:4],
-                    'mood_trends': mood_trends
-                }
-                
-                logger.info(f"Generated insights (fallback): {len(result['insights'])} insights, {len(result['recommendations'])} recommendations")
-                return jsonify(result), 200
+                if 'insight' in line.lower() or 'pattern' in line.lower():
+                    current_section = 'insights'
+                elif 'recommend' in line.lower() or 'suggest' in line.lower():
+                    current_section = 'recommendations'
+                elif 'trend' in line.lower() or 'analysis' in line.lower():
+                    current_section = 'trends'
+                elif line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.')):
+                    if current_section == 'insights':
+                        insights.append(line)
+                    elif current_section == 'recommendations':
+                        recommendations.append(line)
+                    elif current_section == 'trends':
+                        mood_trends = line
+            
+            final_result = {
+                'insights': insights[:4] if insights else ["Your mood tracking shows dedication to self-awareness."],
+                'recommendations': recommendations[:4] if recommendations else ["Continue your daily mood tracking for better insights."],
+                'mood_trends': mood_trends
+            }
+            
+            logger.info(f"Generated insights (parsed): {len(final_result['insights'])} insights, {len(final_result['recommendations'])} recommendations")
+            return jsonify(final_result), 200
         else:
-            logger.error("AI response was empty")
-            return jsonify({"error": "Failed to generate insights"}), 500
+            logger.error(f"AI response failed with status {status_code}: {result}")
+            return jsonify(result), status_code
     
     except Exception as e:
         logger.error(f"Error generating insights: {str(e)}", exc_info=True)
@@ -650,6 +679,15 @@ Use professional, encouraging language. Be specific about patterns observed. For
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5001))
-    # Ensure debug is True for development to see detailed errors and auto-reload
-    app.run(debug=True, host='0.0.0.0', port=port)
+    debug_mode = os.environ.get("FLASK_ENV", "production") == "development"
+    
+    # Configure for production vs development
+    if debug_mode:
+        logger.info("Starting Flask AI service in DEVELOPMENT mode")
+        app.run(debug=True, host='0.0.0.0', port=port)
+    else:
+        logger.info("Starting Flask AI service in PRODUCTION mode")
+        # For production, disable debug mode and use more conservative settings
+        app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
+    
     logger.info(f"Flask AI service stopped.")
