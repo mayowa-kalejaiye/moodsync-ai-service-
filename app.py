@@ -6,6 +6,9 @@ import google.generativeai as genai
 from datetime import datetime
 import logging
 import random # Importing random for Gen Z time-of-day phrases
+import threading
+import time
+import requests
 
 # Load environment variables from .env file in the ai_service directory
 load_dotenv()
@@ -18,6 +21,12 @@ app.config['JSON_SORT_KEYS'] = False  # Maintain key order for better performanc
 
 # Set shorter timeouts for AI requests to prevent client timeouts
 AI_REQUEST_TIMEOUT = 30  # seconds
+
+# Keep-alive service configuration
+KEEP_ALIVE_ENABLED = os.environ.get("FLASK_ENV", "production") != "development"
+KEEP_ALIVE_INTERVAL = 10 * 60  # 10 minutes in seconds
+KEEP_ALIVE_URL = "https://moodsync-ai-service.onrender.com"
+ # Will be set dynamically
 
 # --- Setup Logging ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -48,7 +57,20 @@ def health_check():
             "/generate-challenge-message",
             "/generate-insights"
         ],
-        "gemini_configured": bool(GEMINI_API_KEY)
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "keep_alive_enabled": KEEP_ALIVE_ENABLED,
+        "timestamp": datetime.now().isoformat()
+    }), 200
+
+# --- API Health Check Endpoint (for keep-alive) ---
+@app.route('/api/health/', methods=['GET'])
+def api_health_check():
+    """API health check endpoint for keep-alive service"""
+    return jsonify({
+        "status": "healthy",
+        "service": "MoodSync AI Service",
+        "timestamp": datetime.now().isoformat(),
+        "uptime": "running"
     }), 200
 
 # --- Helper function to list models ---
@@ -729,9 +751,98 @@ Use professional, encouraging language. Be specific about patterns observed. For
         return jsonify({"error": f"Failed to generate insights: {str(e)}"}), 500
 
 
+# --- Keep-Alive Service ---
+class KeepAliveService:
+    """Built-in keep-alive service to prevent server from sleeping"""
+    
+    def __init__(self, base_url=None, interval=KEEP_ALIVE_INTERVAL):
+        self.base_url = base_url
+        self.interval = interval
+        self.running = False
+        self.thread = None
+        self.logger = logging.getLogger(__name__ + '.KeepAlive')
+        
+    def start(self):
+        """Start the keep-alive service"""
+        if not KEEP_ALIVE_ENABLED:
+            self.logger.info("Keep-alive service disabled (development mode)")
+            return
+            
+        if not self.base_url:
+            self.logger.warning("Keep-alive service: No base URL provided, cannot start")
+            return
+            
+        if self.running:
+            self.logger.warning("Keep-alive service already running")
+            return
+            
+        self.running = True
+        self.thread = threading.Thread(target=self._keep_alive_loop, daemon=True)
+        self.thread.start()
+        self.logger.info(f"Keep-alive service started - pinging {self.base_url}/api/health/ every {self.interval//60} minutes")
+    
+    def stop(self):
+        """Stop the keep-alive service"""
+        self.running = False
+        if self.thread:
+            self.logger.info("Keep-alive service stopped")
+    
+    def _keep_alive_loop(self):
+        """Main keep-alive loop"""
+        while self.running:
+            try:
+                # Wait for the interval
+                time.sleep(self.interval)
+                
+                if not self.running:
+                    break
+                
+                # Ping the health endpoint
+                self._ping_health_endpoint()
+                
+            except Exception as e:
+                self.logger.error(f"Keep-alive service error: {str(e)}")
+                # Continue running even if there's an error
+                
+    def _ping_health_endpoint(self):
+        """Ping the health endpoint to keep the service alive"""
+        try:
+            health_url = f"{self.base_url}/api/health/"
+            response = requests.get(health_url, timeout=10)
+            
+            if response.status_code == 200:
+                self.logger.debug(f"Keep-alive ping successful: {health_url}")
+            else:
+                self.logger.warning(f"Keep-alive ping returned status {response.status_code}: {health_url}")
+                
+        except requests.RequestException as e:
+            self.logger.warning(f"Keep-alive ping failed: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"Keep-alive ping error: {str(e)}")
+
+# Initialize keep-alive service
+keep_alive_service = KeepAliveService()
+
+def start_keep_alive_service():
+    """Start the keep-alive service after the app starts"""
+    # Detect the base URL from environment or use default
+    base_url = os.environ.get("RENDER_EXTERNAL_URL") or "https://moodsync-ai-service.onrender.com"
+    
+    # Remove trailing slash if present
+    base_url = base_url.rstrip('/')
+    
+    # Start the keep-alive service
+    keep_alive_service.base_url = base_url
+    keep_alive_service.start()
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5001))
     debug_mode = os.environ.get("FLASK_ENV", "production") == "development"
+    
+    # Start keep-alive service in production
+    if not debug_mode:
+        # Start keep-alive service in a separate thread after a short delay
+        threading.Timer(30.0, start_keep_alive_service).start()
     
     # Configure for production vs development
     if debug_mode:
