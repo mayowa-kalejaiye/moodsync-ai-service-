@@ -25,8 +25,7 @@ AI_REQUEST_TIMEOUT = 30  # seconds
 # Keep-alive service configuration
 KEEP_ALIVE_ENABLED = os.environ.get("FLASK_ENV", "production") != "development"
 KEEP_ALIVE_INTERVAL = 10 * 60  # 10 minutes in seconds
-KEEP_ALIVE_URL = "https://moodsync-ai-service.onrender.com"
- # Will be set dynamically
+KEEP_ALIVE_URL = os.environ.get("KEEP_ALIVE_URL")  # Must be set in environment
 
 # --- Setup Logging ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -825,8 +824,12 @@ keep_alive_service = KeepAliveService()
 
 def start_keep_alive_service():
     """Start the keep-alive service after the app starts"""
-    # Detect the base URL from environment or use default
-    base_url = os.environ.get("RENDER_EXTERNAL_URL") or "https://moodsync-ai-service.onrender.com"
+    # Get the base URL from environment variables
+    base_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("KEEP_ALIVE_URL")
+    
+    if not base_url:
+        logger.warning("Keep-alive service: No base URL provided via RENDER_EXTERNAL_URL or KEEP_ALIVE_URL environment variables")
+        return
     
     # Remove trailing slash if present
     base_url = base_url.rstrip('/')
