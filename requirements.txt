@@ -1,5 +1,6 @@
-Flask>=2.0
-python-dotenv>=0.19
-google-generativeai>=0.7.0 # Updated to a more recent version
-gunicorn>=20.1.0 # For production
-requests>=2.25.0 # For keep-alive service
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-dotenv==1.0.0
+google-generativeai==0.8.3
+pydantic==2.5.0
+requests==2.31.0

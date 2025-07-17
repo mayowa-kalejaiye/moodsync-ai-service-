@@ -41,19 +41,11 @@ An intelligent AI-powered backend service that provides personalized mental heal
 - Creates comprehensive mood trend analysis
 - Returns structured insights in JSON format
 
-### Utility Features
-
-#### 6. **Model Discovery** (`/list-models`)
-- Lists available Gemini AI models
-- Filters models that support content generation
-- Provides model metadata and capabilities
-- Helps with service debugging and model selection
-
 ## 🛠️ Technical Architecture
 
 ### AI Integration
 - **Primary AI Provider**: Google Gemini AI
-- **Model Fallback System**: Automatically tries multiple Gemini models (`gemini-1.0-pro`, `gemini-pro`, `gemini-1.5-flash-latest`)
+- **Current Model**: `gemini-2.0-flash-exp` (latest experimental model)
 - **Error Handling**: Comprehensive error handling with detailed logging
 - **Response Parsing**: Smart JSON parsing with fallback mechanisms
 
@@ -67,6 +59,21 @@ An intelligent AI-powered backend service that provides personalized mental heal
 - **Mood Pattern Recognition**: Analyzes recent mood entries for personalized responses
 - **Activity Correlation**: Identifies patterns between activities and mood states
 - **Mental Health Sensitivity**: Detects anxiety, stress indicators for appropriate responses
+
+### Framework & Architecture
+- **Web Framework**: FastAPI (high-performance, modern Python web framework)
+- **Async Support**: Built-in async/await support for better performance
+- **API Documentation**: Auto-generated OpenAPI/Swagger documentation at `/docs`
+- **Type Safety**: Full Pydantic model validation for request/response data
+- **CORS Support**: Configured for cross-origin requests from mobile apps
+
+### Resilience & Fault Tolerance
+- **Intelligent Retry Logic**: Exponential backoff with jitter for transient failures
+- **Circuit Breaker Pattern**: Prevents cascading failures and enables fast recovery
+- **Error Classification**: Distinguishes between retryable and non-retryable errors
+- **Configurable Parameters**: Fully configurable retry delays, thresholds, and timeouts
+- **Graceful Degradation**: Provides meaningful fallback responses during outages
+- **Comprehensive Logging**: Detailed retry attempt and failure logging for debugging
 
 ## 📋 API Reference
 
@@ -121,7 +128,7 @@ Content-Type: application/json
 ### Prerequisites
 - Python 3.8+
 - Google Gemini API key
-- Flask web framework
+- FastAPI web framework
 
 ### Environment Setup
 
@@ -141,6 +148,9 @@ Create a `.env` file in the project root:
 ```env
 GEMINI_API_KEY=your_google_gemini_api_key_here
 PORT=5001
+FLASK_ENV=production
+KEEP_ALIVE_URL=
+RENDER_EXTERNAL_URL=
 ```
 
 4. **Run the service**
@@ -150,11 +160,16 @@ python app.py
 
 The service will be available at `http://localhost:5001`
 
+**API Documentation**: Visit `http://localhost:5001/docs` for interactive Swagger documentation
+
 ### Dependencies
-```
-flask
-python-dotenv
-google-generativeai
+```txt
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-dotenv==1.0.0
+google-generativeai==0.8.3
+pydantic==2.5.0
+requests==2.31.0
 ```
 
 ## 🔧 Configuration
@@ -162,6 +177,19 @@ google-generativeai
 ### Environment Variables
 - `GEMINI_API_KEY`: Your Google Gemini AI API key (required)
 - `PORT`: Service port (default: 5001)
+- `FLASK_ENV`: Environment mode (development/production)
+- `KEEP_ALIVE_URL`: Optional URL for keep-alive service
+- `RENDER_EXTERNAL_URL`: External service URL for deployment
+
+**Resilience Configuration:**
+- `AI_MAX_RETRIES`: Maximum retry attempts for AI calls (default: 3)
+- `AI_BASE_DELAY`: Base delay between retries in seconds (default: 1.0)
+- `AI_MAX_DELAY`: Maximum delay between retries in seconds (default: 30.0)
+- `AI_JITTER_MAX`: Maximum jitter to add to delays (default: 0.5)
+- `AI_EXPONENTIAL_BASE`: Exponential backoff multiplier (default: 2.0)
+- `AI_CIRCUIT_BREAKER_THRESHOLD`: Failures before circuit opens (default: 5)
+- `AI_CIRCUIT_BREAKER_TIMEOUT`: Recovery timeout in seconds (default: 60)
+- `AI_CIRCUIT_BREAKER_SUCCESS_THRESHOLD`: Successes needed to close circuit (default: 2)
 
 ### Logging
 - Comprehensive logging with configurable levels
@@ -182,34 +210,54 @@ This AI service is designed to seamlessly integrate with the [MoodSync mobile ap
 ## 📊 AI Model Management
 
 ### Model Selection Strategy
-The service implements a robust fallback system:
-1. Attempts primary model (`gemini-1.0-pro`)
-2. Falls back to secondary models if primary fails
-3. Provides detailed error logging for debugging
-4. Graceful degradation for service reliability
 
-### Error Handling
-- **Model Not Found**: Automatically tries alternative models
-- **Content Filtering**: Handles AI safety filtering gracefully
-- **API Limits**: Comprehensive rate limiting and quota management
-- **JSON Parsing**: Fallback mechanisms for malformed AI responses
+The service uses Google's latest Gemini models with a focused, resilient approach:
+
+1. **Primary Model**: `gemini-2.0-flash-exp` (latest experimental model)
+2. **Single Model Focus**: Optimized for performance and resource efficiency
+3. **Intelligent Retry**: Exponential backoff with jitter for transient failures
+4. **Circuit Breaker Protection**: Prevents cascading failures during outages
+5. **Error Classification**: Smart distinction between retryable and permanent errors
+6. **Performance Monitoring**: Response time and success rate tracking
+
+### Error Handling & Resilience
+
+- **Transient Errors**: Automatic retry with exponential backoff
+  - Network timeouts and connection issues
+  - Rate limiting and quota exceeded errors
+  - Temporary service unavailability
+- **Permanent Errors**: No retry to avoid waste
+  - Authentication failures
+  - Content filtering violations
+  - Model not found errors
+- **Circuit Breaker**: Protects against cascading failures
+  - Opens after configurable failure threshold
+  - Half-open state for recovery testing
+  - Automatic closure after successful operations
+- **Graceful Degradation**: Meaningful fallback responses during outages
+- **Configurable Parameters**: All retry and circuit breaker settings are configurable
 
 ## 🏗️ Development
 
 ### Code Structure
+
 ```
 ai_service/
-├── app.py              # Main Flask application
+├── app.py              # Main FastAPI application
 ├── requirements.txt    # Python dependencies
 ├── .env               # Environment configuration
+├── .env.example       # Environment template
+├── .gitignore         # Git ignore rules
 └── README.md          # This file
 ```
 
 ### Key Components
+
 - **AI Response Generator**: Core function handling Gemini AI interactions
 - **Context Builders**: Functions that prepare user context for AI prompts
 - **Tone Adapters**: Logic for age and preference-based communication styles
 - **Pattern Analyzers**: Mood and activity correlation detection
+- **Keep-Alive Service**: Built-in service to prevent deployment sleeping
 
 ## 🤝 Contributing
 
@@ -226,14 +274,37 @@ This project is part of the MoodSync application suite. Please refer to the main
 ## 🔍 Monitoring & Debugging
 
 ### Health Checks
-- Use `/list-models` endpoint to verify AI service connectivity
-- Monitor logs for model fallback patterns
-- Track response times and error rates
+
+- Use `/health` endpoint to verify service status and resilience state
+- Use `/api/health/` endpoint for keep-alive monitoring  
+- Monitor circuit breaker state and failure counts via `/health`
+- Track retry attempts and patterns in application logs
+- Monitor response times and error rates
+
+### Resilience Monitoring
+
+- **Circuit Breaker State**: Monitor via `/health` endpoint
+  - `CLOSED`: Normal operation
+  - `OPEN`: Failing fast due to repeated failures
+  - `HALF_OPEN`: Testing if service has recovered
+- **Retry Metrics**: Track in logs with detailed attempt information
+- **Error Classification**: Review logs for error types and retry decisions
+- **Fallback Activation**: Monitor when fallback responses are used
 
 ### Common Issues
+
 - **AI Key Missing**: Ensure `GEMINI_API_KEY` is properly set
-- **Model Errors**: Check `/list-models` for available model names
-- **JSON Parsing**: Review logs for malformed AI responses
+- **Model Errors**: Check logs for detailed Gemini API error messages
+- **Rate Limiting**: Monitor for quota exceeded errors and retry backoff
+- **Circuit Breaker Tripped**: Check failure patterns and recovery timeouts
+- **Network Issues**: Review retry attempts for connection problems
+- **Keep-Alive Issues**: Verify `RENDER_EXTERNAL_URL` or `KEEP_ALIVE_URL` is set correctly
+
+### API Documentation
+
+- **Interactive Docs**: Visit `/docs` for Swagger UI documentation
+- **OpenAPI Schema**: Available at `/openapi.json`
+- **Health Status**: Check `/health` for service and resilience information
 
 ---
 
