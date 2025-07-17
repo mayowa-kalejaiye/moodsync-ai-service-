@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: moodsync-ai-service
+    runtime: python3
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.14
+      - key: PORT
+        generateValue: true
+      - key: FLASK_ENV
+        value: production
+    autoDeploy: false

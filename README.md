@@ -162,13 +162,31 @@ The service will be available at `http://localhost:5001`
 
 **API Documentation**: Visit `http://localhost:5001/docs` for interactive Swagger documentation
 
+### Deployment to Render
+
+This service is optimized for deployment on [Render](https://render.com):
+
+1. **Connect Repository**: Link your GitHub repository to Render
+2. **Use Web Service**: Create a new Web Service (not Static Site)
+3. **Build Configuration**: The included `render.yaml` will auto-configure
+4. **Environment Variables**: Set `GEMINI_API_KEY` in Render dashboard
+5. **Auto-Deploy**: Optional - enable for automatic deployments
+
+**Required Environment Variables on Render:**
+- `GEMINI_API_KEY`: Your Google Gemini API key
+
+The service includes:
+- `runtime.txt`: Specifies Python 3.10.14 for compatibility
+- `render.yaml`: Optimized build configuration for Render
+- Compatible dependency versions to avoid Rust compilation issues
+
 ### Dependencies
 ```txt
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
 python-dotenv==1.0.0
-google-generativeai==0.8.3
-pydantic==2.5.0
+google-generativeai==0.3.2
+pydantic==1.10.12
 requests==2.31.0
 ```
 
