@@ -238,94 +238,16 @@ The service uses Google's latest Gemini models with a focused, resilient approac
 5. **Error Classification**: Smart distinction between retryable and permanent errors
 6. **Performance Monitoring**: Response time and success rate tracking
 
-### Error Handling & Resilience
+# MoodSync AI Service
 
-- **Transient Errors**: Automatic retry with exponential backoff
-  - Network timeouts and connection issues
-  - Rate limiting and quota exceeded errors
-  - Temporary service unavailability
-- **Permanent Errors**: No retry to avoid waste
-  - Authentication failures
-  - Content filtering violations
-  - Model not found errors
-- **Circuit Breaker**: Protects against cascading failures
-  - Opens after configurable failure threshold
+An intelligent AI-powered backend service that provides personalized mental health support for the MoodSync mobile application. It exposes FastAPI endpoints that generate personalized motivational messages, habit suggestions, nudges, and mood insights using Google Gemini models.
+
+See the consolidated developer & deployment guide in `docs/DEVELOPER.md` for setup, deployment and troubleshooting instructions.
+
+Key files:
+- `app.py` — top-level shim that re-exports the FastAPI app from `moodsync.core`.
+- `moodsync/` — application package (routes, AI glue code, resilience helpers).
+- `requirements.txt`, `runtime.txt` — dependency/runtime pins.
+
+If you're a contributor, open `docs/DEVELOPER.md` first — it contains contribution, testing, and deployment guidance.
   - Half-open state for recovery testing
-  - Automatic closure after successful operations
-- **Graceful Degradation**: Meaningful fallback responses during outages
-- **Configurable Parameters**: All retry and circuit breaker settings are configurable
-
-## 🏗️ Development
-
-### Code Structure
-
-```
-ai_service/
-├── app.py              # Main FastAPI application
-├── requirements.txt    # Python dependencies
-├── .env               # Environment configuration
-├── .env.example       # Environment template
-├── .gitignore         # Git ignore rules
-└── README.md          # This file
-```
-
-### Key Components
-
-- **AI Response Generator**: Core function handling Gemini AI interactions
-- **Context Builders**: Functions that prepare user context for AI prompts
-- **Tone Adapters**: Logic for age and preference-based communication styles
-- **Pattern Analyzers**: Mood and activity correlation detection
-- **Keep-Alive Service**: Built-in service to prevent deployment sleeping
-
-## 🤝 Contributing
-
-This service is part of the MoodSync ecosystem. For contributions:
-1. Follow the coding standards established in the main MoodSync project
-2. Ensure all AI interactions are tested with various user contexts
-3. Maintain backward compatibility with the mobile app API
-4. Add comprehensive logging for new features
-
-## 📝 License
-
-This project is part of the MoodSync application suite. Please refer to the main [MoodSync repository](https://github.com/mayowa-kalejaiye/Moodify.git) for licensing information.
-
-## 🔍 Monitoring & Debugging
-
-### Health Checks
-
-- Use `/health` endpoint to verify service status and resilience state
-- Use `/api/health/` endpoint for keep-alive monitoring  
-- Monitor circuit breaker state and failure counts via `/health`
-- Track retry attempts and patterns in application logs
-- Monitor response times and error rates
-
-### Resilience Monitoring
-
-- **Circuit Breaker State**: Monitor via `/health` endpoint
-  - `CLOSED`: Normal operation
-  - `OPEN`: Failing fast due to repeated failures
-  - `HALF_OPEN`: Testing if service has recovered
-- **Retry Metrics**: Track in logs with detailed attempt information
-- **Error Classification**: Review logs for error types and retry decisions
-- **Fallback Activation**: Monitor when fallback responses are used
-
-### Common Issues
-
-- **AI Key Missing**: Ensure `GEMINI_API_KEY` is properly set
-- **Model Errors**: Check logs for detailed Gemini API error messages
-- **Rate Limiting**: Monitor for quota exceeded errors and retry backoff
-- **Circuit Breaker Tripped**: Check failure patterns and recovery timeouts
-- **Network Issues**: Review retry attempts for connection problems
-- **Keep-Alive Issues**: Verify `RENDER_EXTERNAL_URL` or `KEEP_ALIVE_URL` is set correctly
-
-### API Documentation
-
-- **Interactive Docs**: Visit `/docs` for Swagger UI documentation
-- **OpenAPI Schema**: Available at `/openapi.json`
-- **Health Status**: Check `/health` for service and resilience information
-
----
-
-**Built with ❤️ for mental health and wellbeing**
-
-For questions about the MoodSync mobile app, visit the [main repository](https://github.com/mayowa-kalejaiye/Moodify.git).
